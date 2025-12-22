@@ -11,8 +11,13 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 // 1. Middleware Setup
+// index.js
 app.use(cors({
-    origin: ['http://localhost:5173', 'https://your-live-link.vercel.app'], 
+    origin: [
+        'http://localhost:3000', // Add this for your current frontend
+        'http://localhost:5173', // Keep this for Vite default
+        'https://your-live-link.vercel.app' // Your production link
+    ],
     credentials: true
 }));
 app.use(express.json());
@@ -36,21 +41,10 @@ async function run() {
         const ordersCollection = db.collection("orders");
 
         // --- AUTH API ---
-        app.post('/jwt', async (req, res) => {
-            const user = req.body;
-            const token = jwt.sign(user, process.env.JWT_SECRET, { expiresIn: '1h' });
-            res.cookie('token', token, {
-                httpOnly: true,
-                secure: process.env.NODE_ENV === 'production',
-                sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
-            }).send({ success: true });
-        });
+        app.post('/jwt', async (req, res) => { /* ... code remains same ... */ });
+        app.post('/logout', (req, res) => { /* ... code remains same ... */ });
 
-        app.post('/logout', (req, res) => {
-            res.clearCookie('token', { maxAge: 0 }).send({ success: true });
-        });
-
-        // --- PRODUCTS API ---
+        // --- PRODUCTS API (KEEP THIS ONE INSIDE RUN) ---
         app.get('/home-products', async (req, res) => {
             const query = { showOnHome: true }; 
             const result = await productsCollection.find(query).limit(6).toArray();
@@ -67,78 +61,51 @@ async function run() {
             res.send(result);
         });
 
-        app.post('/products', verifyToken, async (req, res) => {
-            const product = req.body;
-            const user = await usersCollection.findOne({ email: req.user.email });
-            // Requirement: Suspended Managers cannot add new products 
-            if (user?.status === 'suspended') return res.status(403).send({ message: 'Forbidden' });
-            
-            const result = await productsCollection.insertOne(product);
-            res.send(result);
-        });
-
-        // --- USERS API (Admin) ---
-        app.get('/users', verifyToken, async (req, res) => {
-            const search = req.query.search || ""; 
-            const query = { name: { $regex: search, $options: 'i' } };
-            const result = await usersCollection.find(query).toArray();
-            res.send(result);
-        });
-
-        app.patch('/users/suspend/:id', verifyToken, async (req, res) => {
-            const id = req.params.id;
-            const { reason, feedback } = req.body;
-            const filter = { _id: new ObjectId(id) };
-            // Challenge: Admin suspend modal must collect reason & feedback [cite: 242]
-            const updateDoc = {
-                $set: { 
-                    status: 'suspended',
-                    suspendReason: reason,
-                    suspendFeedback: feedback 
-                }
-            };
-            const result = await usersCollection.updateOne(filter, updateDoc);
-            res.send(result);
-        });
-
-        // --- ORDERS API ---
-        app.post('/orders', verifyToken, async (req, res) => {
-            const order = req.body;
-            const user = await usersCollection.findOne({ email: req.user.email });
-            // Requirement: Suspended Buyers cannot place new orders 
-            if (user?.status === 'suspended') return res.status(403).send({ message: 'Forbidden' });
-            
-            const result = await ordersCollection.insertOne(order);
-            res.send(result);
-        });
-
-        app.patch('/orders/:id/track', verifyToken, async (req, res) => {
-            const { status, location, note } = req.body;
-            const filter = { _id: new ObjectId(req.params.id) };
-            const updateDoc = {
-                $push: {
-                    trackingHistory: {
-                        status, // e.g., "Cutting Completed", "Sewing Started" [cite: 217, 226]
-                        location,
-                        note,
-                        updatedAt: new Date()
-                    }
-                },
-                $set: { currentStatus: status }
-            };
-            const result = await ordersCollection.updateOne(filter, updateDoc);
-            res.send(result);
-        });
+        // ... rest of your routes (post products, users, orders) ...
 
         console.log("Successfully connected to MongoDB!");
     } catch (error) {
         console.error("MongoDB Connection Error:", error);
     }
 }
+
 run().catch(console.dir);
 
 app.get('/', (req, res) => {
     res.send('Garments Tracker Server is Running');
+});
+// GET /home-products -> return 6 products
+app.get('/home-products', async (req, res) => {
+  try {
+    const result = await productsCollection.find().limit(6).toArray(); // LIMIT 6
+    res.send(result);
+  } catch (error) {
+    console.error(error);
+    res.status(500).send({ message: "Error fetching products" });
+  }
+});
+// index.js - Inside the run() function
+app.get('/product/:id', async (req, res) => {
+    try {
+        const id = req.params.id;
+
+        // 1. Validate ID format before querying MongoDB
+        if (!ObjectId.isValid(id)) {
+            return res.status(400).send({ message: "Invalid ID format" });
+        }
+
+        const query = { _id: new ObjectId(id) };
+        const result = await productsCollection.findOne(query);
+
+        if (!result) {
+            return res.status(404).send({ message: "Product not found" });
+        }
+
+        res.send(result);
+    } catch (error) {
+        console.error("Fetch Single Product Error:", error);
+        res.status(500).send({ message: "Server error" });
+    }
 });
 
 app.listen(port, () => {
