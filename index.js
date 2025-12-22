@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
+// This line imports the function from your middleware file
 const verifyToken = require('./middleware/verifyToken'); 
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 require('dotenv').config();
@@ -9,7 +10,7 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 5000;
 
-// 1. Middleware Setup (Must be first)
+// 1. Middleware Setup
 app.use(cors({
     origin: ['http://localhost:5173', 'https://your-live-link.vercel.app'], 
     credentials: true
@@ -17,20 +18,7 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
-// 2. JWT Secret & Token Verification Middleware
-// This must be defined BEFORE any routes that use it
-const verifyToken = (req, res, next) => {
-    const token = req.cookies?.token;
-    if (!token) return res.status(401).send({ message: 'unauthorized access' });
-    
-    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
-        if (err) return res.status(401).send({ message: 'unauthorized access' });
-        req.user = decoded;
-        next();
-    });
-};
-
-// 3. MongoDB Connection
+// 2. MongoDB Connection
 const uri = process.env.DB_URI; 
 const client = new MongoClient(uri, {
     serverApi: {
@@ -42,9 +30,6 @@ const client = new MongoClient(uri, {
 
 async function run() {
     try {
-        // Connect to MongoDB
-        // await client.connect(); // Uncomment if using local Node environment
-        
         const db = client.db("garmentsTracker");
         const usersCollection = db.collection("users");
         const productsCollection = db.collection("products");
@@ -85,7 +70,8 @@ async function run() {
         app.post('/products', verifyToken, async (req, res) => {
             const product = req.body;
             const user = await usersCollection.findOne({ email: req.user.email });
-            if (user?.status === 'suspended') return res.status(403).send({ message: 'Action forbidden for suspended users' });
+            // Requirement: Suspended Managers cannot add new products 
+            if (user?.status === 'suspended') return res.status(403).send({ message: 'Forbidden' });
             
             const result = await productsCollection.insertOne(product);
             res.send(result);
@@ -103,6 +89,7 @@ async function run() {
             const id = req.params.id;
             const { reason, feedback } = req.body;
             const filter = { _id: new ObjectId(id) };
+            // Challenge: Admin suspend modal must collect reason & feedback [cite: 242]
             const updateDoc = {
                 $set: { 
                     status: 'suspended',
@@ -118,6 +105,7 @@ async function run() {
         app.post('/orders', verifyToken, async (req, res) => {
             const order = req.body;
             const user = await usersCollection.findOne({ email: req.user.email });
+            // Requirement: Suspended Buyers cannot place new orders 
             if (user?.status === 'suspended') return res.status(403).send({ message: 'Forbidden' });
             
             const result = await ordersCollection.insertOne(order);
@@ -130,7 +118,7 @@ async function run() {
             const updateDoc = {
                 $push: {
                     trackingHistory: {
-                        status,
+                        status, // e.g., "Cutting Completed", "Sewing Started" [cite: 217, 226]
                         location,
                         note,
                         updatedAt: new Date()
