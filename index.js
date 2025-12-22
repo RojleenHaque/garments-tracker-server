@@ -19,7 +19,7 @@ app.use(cors({
   origin: [
     'http://localhost:3000', 
     'http://localhost:5173', 
-    'https://strong-gelato-364ab1.netlify.app/' // <-- deployed frontend
+    'https://strong-gelato-364ab1.netlify.app' // <-- deployed frontend
   ],
   credentials: true,
 }));
