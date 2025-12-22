@@ -1,3 +1,4 @@
+// index.js
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
@@ -10,12 +11,18 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 /* ---------------- MIDDLEWARE ---------------- */
-app.use(cors({
-  origin: ['http://localhost:3000', 'http://localhost:5173'],
-  credentials: true,
-}));
 app.use(express.json());
 app.use(cookieParser());
+
+// Update CORS to include your deployed frontend
+app.use(cors({
+  origin: [
+    'http://localhost:3000', 
+    'http://localhost:5173', 
+    'https://strong-gelato-364ab1.netlify.app/' // <-- deployed frontend
+  ],
+  credentials: true,
+}));
 
 /* ---------------- JWT VERIFICATION ---------------- */
 const verifyToken = (req, res, next) => {
@@ -24,7 +31,7 @@ const verifyToken = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded; // contains email & role
+    req.user = decoded; // contains email, role, id
     next();
   } catch {
     res.status(401).send({ message: 'Invalid token' });
@@ -58,35 +65,31 @@ async function run() {
     });
 
     /* ---------------- LOGIN ---------------- */
-    /* ---------------- LOGIN ---------------- */
-app.post('/login', async (req, res) => {
-  try {
-    const { email, password } = req.body;
-    const user = await usersCollection.findOne({ email: email.trim() });
-    if (!user) return res.status(401).send({ message: 'Invalid credentials' });
+    app.post('/login', async (req, res) => {
+      try {
+        const { email, password } = req.body;
+        const user = await usersCollection.findOne({ email: email.trim() });
+        if (!user) return res.status(401).send({ message: 'Invalid credentials' });
 
-    // Optional: block inactive/suspended users
-    if (user.status !== 'active') {
-      return res.status(403).send({ message: 'User is suspended or inactive' });
-    }
+        if (user.status !== 'active') return res.status(403).send({ message: 'User is suspended or inactive' });
 
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) return res.status(401).send({ message: 'Invalid credentials' });
+        const isMatch = await bcrypt.compare(password, user.password);
+        if (!isMatch) return res.status(401).send({ message: 'Invalid credentials' });
 
-    const token = jwt.sign(
-      { email: user.email, role: user.role, id: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: '1h' }
-    );
+        const token = jwt.sign(
+          { id: user._id, email: user.email, role: user.role },
+          process.env.JWT_SECRET,
+          { expiresIn: '1h' }
+        );
 
-    res.cookie('token', token, { httpOnly: true, secure: false, sameSite: 'lax' });
+        res.cookie('token', token, { httpOnly: true, secure: false, sameSite: 'lax' });
+        res.send({ user: { id: user._id, name: user.name, email: user.email, role: user.role } });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: 'Server error' });
+      }
+    });
 
-    res.send({ user: { id: user._id, name: user.name, email: user.email, role: user.role } });
-  } catch (err) {
-    console.error(err);
-    res.status(500).send({ message: 'Server error' });
-  }
-});
     /* ---------------- LOGOUT ---------------- */
     app.post('/logout', (req, res) => {
       res.clearCookie('token');
@@ -94,7 +97,6 @@ app.post('/login', async (req, res) => {
     });
 
     /* ---------------- PRODUCTS ---------------- */
-    // Public products
     app.get('/home-products', async (req, res) => {
       const result = await productsCollection.find({ showOnHome: true }).limit(6).toArray();
       res.send(result);
@@ -119,7 +121,10 @@ app.post('/login', async (req, res) => {
 
     app.put('/products/:id', verifyToken, async (req, res) => {
       if (req.user.role !== 'manager') return res.status(403).send({ message: 'Forbidden' });
-      const result = await productsCollection.updateOne({ _id: new ObjectId(req.params.id) }, { $set: req.body });
+      const result = await productsCollection.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        { $set: req.body }
+      );
       res.send(result);
     });
 
@@ -143,12 +148,12 @@ app.post('/login', async (req, res) => {
       res.send(result);
     });
 
-    // Buyer orders
     app.get('/my-orders', verifyToken, async (req, res) => {
       const orders = await ordersCollection.find({ userEmail: req.user.email }).sort({ createdAt: -1 }).toArray();
       res.send(orders);
     });
 
+    /* ---------------- DASHBOARD ROUTES ---------------- */
     // Manager pending orders
     app.get('/orders/pending', verifyToken, async (req, res) => {
       if (req.user.role !== 'manager') return res.status(403).send({ message: 'Forbidden' });
@@ -174,32 +179,7 @@ app.post('/login', async (req, res) => {
       res.send(result);
     });
 
-    // Manager: Add tracking
-    app.post('/orders/:id/tracking', verifyToken, async (req, res) => {
-      if (req.user.role !== 'manager') return res.status(403).send({ message: 'Forbidden' });
-      const trackingUpdate = req.body;
-      const result = await ordersCollection.updateOne(
-        { _id: new ObjectId(req.params.id) },
-        { $push: { tracking: trackingUpdate } }
-      );
-      res.send(result);
-    });
-
-    // Get tracking info
-    app.get('/orders/:id/tracking', verifyToken, async (req, res) => {
-      const order = await ordersCollection.findOne({ _id: new ObjectId(req.params.id) });
-      res.send(order.tracking || []);
-    });
-
-    // Admin: All orders
-    app.get('/orders/all', verifyToken, async (req, res) => {
-      if (req.user.role !== 'admin') return res.status(403).send({ message: 'Forbidden' });
-      const orders = await ordersCollection.find().sort({ createdAt: -1 }).toArray();
-      res.send(orders);
-    });
-
     /* ---------------- USERS ---------------- */
-    // Admin manage users
     app.get('/admin/users', verifyToken, async (req, res) => {
       if (req.user.role !== 'admin') return res.status(403).send({ message: 'Forbidden' });
       const users = await usersCollection.find().toArray();
