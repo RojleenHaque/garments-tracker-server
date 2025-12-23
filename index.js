@@ -14,12 +14,12 @@ const port = process.env.PORT || 5000;
 app.use(express.json());
 app.use(cookieParser());
 
-// Update CORS to include your deployed frontend
+
 app.use(cors({
   origin: [
     'http://localhost:3000', 
     'http://localhost:5173', 
-    'https://strong-gelato-364ab1.netlify.app' // <-- deployed frontend
+    'https://zesty-treacle-71cc0b.netlify.app/' 
   ],
   credentials: true,
 }));
@@ -82,7 +82,7 @@ async function run() {
           { expiresIn: '1h' }
         );
 
-        res.cookie('token', token, { httpOnly: true, secure: false, sameSite: 'lax' });
+        res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'none' });
         res.send({ user: { id: user._id, name: user.name, email: user.email, role: user.role } });
       } catch (err) {
         console.error(err);
