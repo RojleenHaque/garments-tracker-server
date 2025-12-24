@@ -107,6 +107,9 @@ app.get('/api/my-orders', verifyToken, async (req, res) => {
     res.json(orders);
   } catch (err) { res.status(500).json({ message: err.message }); }
 });
+app.get('/', (req, res) => {
+  res.send('Garments Tracker Server is running!');
+});
 
 // Vercel handler
 module.exports = app;
