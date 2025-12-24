@@ -1,3 +1,4 @@
+/* ---------------- IMPORTS ---------------- */
 const express = require('express');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
@@ -6,33 +7,31 @@ const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const bcrypt = require('bcrypt');
 require('dotenv').config();
 
+/* ---------------- APP & PORT ---------------- */
 const app = express();
 const port = process.env.PORT || 5000;
 
 /* ---------------- MIDDLEWARE ---------------- */
-app.use(express.json());
-app.use(cookieParser());
 const allowedOrigins = [
+  'https://zesty-treacle-71cc0b.netlify.app',
   'http://localhost:3000',
-  'http://localhost:5173',
-  'https://zesty-treacle-71cc0b.netlify.app'
 ];
 
 app.use(cors({
-  origin: function(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) {
-      callback(null, true)
-    } else {
-      callback(new Error('Not allowed by CORS'))
-    }
-  },
-  credentials: true
+  origin: allowedOrigins,
+  credentials: true,
+  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization']
 }));
 
+app.options('*', cors({ origin: allowedOrigins, credentials: true }));
+
+app.use(express.json());
+app.use(cookieParser());
 
 /* ---------------- JWT VERIFICATION ---------------- */
 const verifyToken = (req, res, next) => {
-  const token = req.cookies.token || req.headers.authorization?.split(' ')[1];
+  const token = req.cookies?.token || req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).send({ message: 'Unauthorized' });
 
   try {
@@ -52,14 +51,15 @@ const client = new MongoClient(process.env.DB_URI, {
 async function startServer() {
   try {
     await client.connect();
-   console.log(`✅ MongoDB Connected to garmentsTracker at ${process.env.DB_URI.split('@')[1].split('/')[0]}`);
-const db = client.db('garmentsTracker');
+    console.log(`✅ MongoDB Connected`);
+
+    const db = client.db('garmentsTracker');
     const usersCollection = db.collection('users');
     const productsCollection = db.collection('products');
     const ordersCollection = db.collection('orders');
 
     /* ---------------- REGISTER ---------------- */
-    app.post('/register', async (req, res) => {
+    app.post('/api/register', async (req, res) => {
       try {
         const { name, email, password, role } = req.body;
         const exists = await usersCollection.findOne({ email });
@@ -75,12 +75,12 @@ const db = client.db('garmentsTracker');
     });
 
     /* ---------------- LOGIN ---------------- */
-    app.post('/login', async (req, res) => {
+    app.post('/api/login', async (req, res) => {
       try {
         const { email, password } = req.body;
         const user = await usersCollection.findOne({ email: email.trim() });
         if (!user) return res.status(401).send({ message: 'Invalid credentials' });
-        if (user.status !== 'active') return res.status(403).send({ message: 'User is suspended or inactive' });
+        if (user.status !== 'active') return res.status(403).send({ message: 'User inactive' });
 
         const isMatch = await bcrypt.compare(password, user.password);
         if (!isMatch) return res.status(401).send({ message: 'Invalid credentials' });
@@ -100,69 +100,88 @@ const db = client.db('garmentsTracker');
     });
 
     /* ---------------- LOGOUT ---------------- */
-    app.post('/logout', (req, res) => {
-      res.clearCookie('token');
+    app.post('/api/logout', (req, res) => {
+      res.clearCookie('token', { httpOnly: true, secure: true, sameSite: 'none' });
       res.send({ success: true });
     });
 
     /* ---------------- HOME & PRODUCTS ---------------- */
-    app.get('/home-products', async (req, res) => {
-      const result = await productsCollection.find({ showOnHome: true }).limit(6).toArray();
-      res.send(result);
+    app.get('/api/home-products', async (req, res) => {
+      try {
+        const result = await productsCollection.find({ showOnHome: true }).limit(6).toArray();
+        res.send(result);
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: 'Failed to fetch products' });
+      }
     });
 
-    app.get('/all-products', async (req, res) => {
-      const products = await productsCollection.find().toArray();
-      res.send(products);
+    app.get('/api/all-products', async (req, res) => {
+      try {
+        const products = await productsCollection.find().toArray();
+        res.send(products);
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: 'Failed to fetch products' });
+      }
     });
 
-    app.get('/product/:id', async (req, res) => {
-      const product = await productsCollection.findOne({ _id: new ObjectId(req.params.id) });
-      res.send(product);
+    app.get('/api/product/:id', async (req, res) => {
+      try {
+        const product = await productsCollection.findOne({ _id: new ObjectId(req.params.id) });
+        res.send(product);
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: 'Failed to fetch product' });
+      }
     });
 
     /* ---------------- MANAGER CRUD ---------------- */
-    app.post('/products', verifyToken, async (req, res) => {
+    app.post('/api/products', verifyToken, async (req, res) => {
       if (req.user.role !== 'manager') return res.status(403).send({ message: 'Forbidden' });
       const result = await productsCollection.insertOne(req.body);
       res.send(result);
     });
 
-    app.put('/products/:id', verifyToken, async (req, res) => {
+    app.put('/api/products/:id', verifyToken, async (req, res) => {
       if (req.user.role !== 'manager') return res.status(403).send({ message: 'Forbidden' });
-      const result = await productsCollection.updateOne({ _id: new ObjectId(req.params.id) }, { $set: req.body });
+      const result = await productsCollection.updateOne(
+        { _id: new ObjectId(req.params.id) },
+        { $set: req.body }
+      );
       res.send(result);
     });
 
-    app.delete('/products/:id', verifyToken, async (req, res) => {
+    app.delete('/api/products/:id', verifyToken, async (req, res) => {
       if (req.user.role !== 'manager') return res.status(403).send({ message: 'Forbidden' });
       const result = await productsCollection.deleteOne({ _id: new ObjectId(req.params.id) });
       res.send(result);
     });
 
     /* ---------------- ORDERS ---------------- */
-    app.post('/book-product', verifyToken, async (req, res) => {
+    app.post('/api/book-product', verifyToken, async (req, res) => {
       const order = { ...req.body, userEmail: req.user.email, status: 'Pending', createdAt: new Date() };
       const result = await ordersCollection.insertOne(order);
       res.send(result);
     });
 
-    app.get('/my-orders', verifyToken, async (req, res) => {
-      const orders = await ordersCollection.find({ userEmail: req.user.email }).sort({ createdAt: -1 }).toArray();
+    app.get('/api/my-orders', verifyToken, async (req, res) => {
+      const orders = await ordersCollection
+        .find({ userEmail: req.user.email })
+        .sort({ createdAt: -1 })
+        .toArray();
       res.send(orders);
     });
-
-    /* ---------------- DASHBOARD & USERS ---------------- */
-    // ... keep your other routes here
 
     /* ---------------- ROOT ---------------- */
     app.get('/', (req, res) => res.send('Garments Tracker Server Running'));
 
     /* ---------------- START SERVER ---------------- */
     app.listen(port, () => console.log(`Server running on port ${port}`));
+
   } catch (err) {
     console.error('❌ MongoDB connection failed:', err);
-    process.exit(1); // stop server if DB connection fails
+    process.exit(1);
   }
 }
 
