@@ -12,14 +12,23 @@ const port = process.env.PORT || 5000;
 /* ---------------- MIDDLEWARE ---------------- */
 app.use(express.json());
 app.use(cookieParser());
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'https://zesty-treacle-71cc0b.netlify.app'
+];
+
 app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'http://localhost:5173',
-    'https://zesty-treacle-71cc0b.netlify.app'
-  ],
-  credentials: true,
+  origin: function(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true)
+    } else {
+      callback(new Error('Not allowed by CORS'))
+    }
+  },
+  credentials: true
 }));
+
 
 /* ---------------- JWT VERIFICATION ---------------- */
 const verifyToken = (req, res, next) => {
