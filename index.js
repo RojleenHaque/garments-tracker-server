@@ -6,19 +6,35 @@ const cookieParser = require('cookie-parser');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const { MongoClient, ObjectId } = require('mongodb');
+const serverless = require('serverless-http');
 require('dotenv').config();
 
 const app = express();
 
+// ----------------------
 // Middleware
+// ----------------------
+const allowedOrigins = [
+  'http://localhost:3000',
+  'https://zesty-treacle-71cc0b.netlify.app', // your frontend URL
+];
+
 app.use(cors({
-  origin: ['http://localhost:3000', 'https://your-frontend-url.vercel.app'],
+  origin: function(origin, callback) {
+    if (!origin) return callback(null, true); // allow Postman or server-to-server
+    if (allowedOrigins.indexOf(origin) === -1) {
+      return callback(new Error('CORS not allowed for this origin'), false);
+    }
+    return callback(null, true);
+  },
   credentials: true
 }));
 app.use(express.json());
 app.use(cookieParser());
 
+// ----------------------
 // MongoDB Connection
+// ----------------------
 const client = new MongoClient(process.env.DB_URI);
 let usersCollection, productsCollection, ordersCollection;
 
@@ -30,9 +46,11 @@ async function connectDB() {
   ordersCollection = db.collection('orders');
   console.log('MongoDB connected');
 }
-connectDB().catch(console.error);
+connectDB().catch(err => console.error('DB connection error:', err));
 
+// ----------------------
 // JWT Middleware
+// ----------------------
 const verifyToken = (req, res, next) => {
   const token = req.cookies.token || req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ message: 'Unauthorized' });
@@ -44,7 +62,9 @@ const verifyToken = (req, res, next) => {
   }
 };
 
+// ----------------------
 // Routes
+// ----------------------
 
 // Test
 app.get('/api', (req, res) => res.json({ message: 'Server running' }));
@@ -57,7 +77,9 @@ app.post('/api/register', async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
     await usersCollection.insertOne({ name, email, password: hashedPassword, role, status: 'active' });
     res.json({ success: true });
-  } catch (err) { res.status(500).json({ message: err.message }); }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
 app.post('/api/login', async (req, res) => {
@@ -73,7 +95,9 @@ app.post('/api/login', async (req, res) => {
     const token = jwt.sign({ id: user._id, email: user.email, role: user.role }, process.env.JWT_SECRET, { expiresIn: '1h' });
     res.cookie('token', token, { httpOnly: true, secure: true, sameSite: 'none' });
     res.json({ user: { id: user._id, name: user.name, email: user.email, role: user.role } });
-  } catch (err) { res.status(500).json({ message: err.message }); }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
 app.post('/api/logout', (req, res) => {
@@ -83,13 +107,21 @@ app.post('/api/logout', (req, res) => {
 
 // Products
 app.get('/api/all-products', async (req, res) => {
-  try { const products = await productsCollection.find().toArray(); res.json(products); } 
-  catch (err) { res.status(500).json({ message: err.message }); }
+  try {
+    const products = await productsCollection.find().toArray();
+    res.json(products);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
 app.get('/api/product/:id', async (req, res) => {
-  try { const product = await productsCollection.findOne({ _id: new ObjectId(req.params.id) }); res.json(product); } 
-  catch (err) { res.status(500).json({ message: err.message }); }
+  try {
+    const product = await productsCollection.findOne({ _id: new ObjectId(req.params.id) });
+    res.json(product);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
 // Orders
@@ -98,18 +130,27 @@ app.post('/api/book-product', verifyToken, async (req, res) => {
     const order = { ...req.body, userEmail: req.user.email, status: 'Pending', createdAt: new Date() };
     const result = await ordersCollection.insertOne(order);
     res.json(result);
-  } catch (err) { res.status(500).json({ message: err.message }); }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
 
 app.get('/api/my-orders', verifyToken, async (req, res) => {
   try {
     const orders = await ordersCollection.find({ userEmail: req.user.email }).sort({ createdAt: -1 }).toArray();
     res.json(orders);
-  } catch (err) { res.status(500).json({ message: err.message }); }
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
 });
+
+// Root route
 app.get('/', (req, res) => {
   res.send('Garments Tracker Server is running!');
 });
 
-// Vercel handler
-module.exports = app;
+// ----------------------
+// Vercel serverless export
+// ----------------------
+module.exports = serverless(app);
+
