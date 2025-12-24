@@ -16,7 +16,7 @@ const app = express();
 // ----------------------
 const allowedOrigins = [
   'http://localhost:3000',
-  'https://zesty-treacle-71cc0b.netlify.app', // your frontend URL
+  'https://cool-starburst-a57628.netlify.app', // your frontend URL
 ];
 
 app.use(cors({
