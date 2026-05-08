@@ -11,7 +11,7 @@ const app = express();
 // ----------------------
 app.use(cors({
   origin: "*",
-  credentials: true
+  credentials: true,
 }));
 
 app.use(express.json());
@@ -24,23 +24,32 @@ const uri = `mongodb+srv://${process.env.DB_USER}:${encodeURIComponent(process.e
 
 const client = new MongoClient(uri);
 
-// Collections (global for Vercel)
-let usersCollection;
-let productsCollection;
-let ordersCollection;
+// ----------------------
+// SAFE DB CONNECT HELPER (IMPORTANT FOR VERCEL)
+// ----------------------
+const getDB = async () => {
+  if (!client.topology || !client.topology.isConnected()) {
+    await client.connect();
+  }
+  return client.db("assignment11");
+};
 
 // ----------------------
-// TEST ROUTE (IMPORTANT)
+// ROOT TEST ROUTE
 // ----------------------
 app.get("/", (req, res) => {
-  res.send("Garments Tracker Server Running");
+  res.send("🚀 Garments Tracker Server Running");
 });
 
-// ----------------------
+// ======================================================
 // USERS
-// ----------------------
+// ======================================================
+
 app.post("/users", async (req, res) => {
   try {
+    const db = await getDB();
+    const usersCollection = db.collection("users");
+
     const user = req.body;
 
     const existing = await usersCollection.findOne({ email: user.email });
@@ -63,6 +72,9 @@ app.post("/users", async (req, res) => {
 
 app.get("/users", async (req, res) => {
   try {
+    const db = await getDB();
+    const usersCollection = db.collection("users");
+
     const result = await usersCollection.find().toArray();
     res.send(result);
   } catch (error) {
@@ -72,12 +84,14 @@ app.get("/users", async (req, res) => {
 
 app.patch("/users/:id", async (req, res) => {
   try {
+    const db = await getDB();
+    const usersCollection = db.collection("users");
+
     const id = req.params.id;
-    const update = req.body;
 
     const result = await usersCollection.updateOne(
       { _id: new ObjectId(id) },
-      { $set: update }
+      { $set: req.body }
     );
 
     res.send(result);
@@ -86,47 +100,73 @@ app.patch("/users/:id", async (req, res) => {
   }
 });
 
-// ----------------------
+// ======================================================
 // PRODUCTS
-// ----------------------
+// ======================================================
+
 app.post("/products", async (req, res) => {
-  const product = req.body;
-  const result = await productsCollection.insertOne(product);
-  res.send(result);
+  try {
+    const db = await getDB();
+    const productsCollection = db.collection("products");
+
+    const result = await productsCollection.insertOne(req.body);
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({ message: err.message });
+  }
 });
 
 app.get("/all-products", async (req, res) => {
-  const result = await productsCollection.find().toArray();
-  res.send(result);
+  try {
+    const db = await getDB();
+    const productsCollection = db.collection("products");
+
+    const result = await productsCollection.find().toArray();
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({ message: err.message });
+  }
 });
 
 app.get("/product/:id", async (req, res) => {
-  const id = req.params.id;
+  try {
+    const db = await getDB();
+    const productsCollection = db.collection("products");
 
-  const result = await productsCollection.findOne({
-    _id: new ObjectId(id),
-  });
+    const result = await productsCollection.findOne({
+      _id: new ObjectId(req.params.id),
+    });
 
-  res.send(result);
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({ message: err.message });
+  }
 });
 
 app.delete("/products/:id", async (req, res) => {
-  const id = req.params.id;
+  try {
+    const db = await getDB();
+    const productsCollection = db.collection("products");
 
-  const result = await productsCollection.deleteOne({
-    _id: new ObjectId(id),
-  });
+    const result = await productsCollection.deleteOne({
+      _id: new ObjectId(req.params.id),
+    });
 
-  res.send(result);
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({ message: err.message });
+  }
 });
 
-// ----------------------
+// ======================================================
 // ORDERS
-// ----------------------
+// ======================================================
 
-// CREATE ORDER
 app.post("/book-product", async (req, res) => {
   try {
+    const db = await getDB();
+    const ordersCollection = db.collection("orders");
+
     const order = req.body;
 
     const result = await ordersCollection.insertOne({
@@ -142,10 +182,11 @@ app.post("/book-product", async (req, res) => {
   }
 });
 
-// UPDATE ORDER STATUS (ADMIN/MANAGER)
 app.patch("/orders/:id", async (req, res) => {
   try {
-    const id = req.params.id;
+    const db = await getDB();
+    const ordersCollection = db.collection("orders");
+
     const { status } = req.body;
 
     const updateDoc = {
@@ -159,7 +200,7 @@ app.patch("/orders/:id", async (req, res) => {
     }
 
     const result = await ordersCollection.updateOne(
-      { _id: new ObjectId(id) },
+      { _id: new ObjectId(req.params.id) },
       updateDoc
     );
 
@@ -169,9 +210,45 @@ app.patch("/orders/:id", async (req, res) => {
   }
 });
 
-// GET HOME PRODUCTS
+app.get("/orders", async (req, res) => {
+  try {
+    const db = await getDB();
+    const ordersCollection = db.collection("orders");
+
+    const result = await ordersCollection.find().toArray();
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({ message: err.message });
+  }
+});
+
+app.get("/my-orders", async (req, res) => {
+  try {
+    const db = await getDB();
+    const ordersCollection = db.collection("orders");
+
+    const email = req.query.email;
+
+    const result = await ordersCollection
+      .find({ userEmail: email })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    res.send(result);
+  } catch (err) {
+    res.status(500).send([]);
+  }
+});
+
+// ======================================================
+// HOME PRODUCTS
+// ======================================================
+
 app.get("/home-products", async (req, res) => {
   try {
+    const db = await getDB();
+    const productsCollection = db.collection("products");
+
     const result = await productsCollection.find().limit(6).toArray();
     res.send(result);
   } catch (err) {
@@ -179,46 +256,7 @@ app.get("/home-products", async (req, res) => {
   }
 });
 
-// GET ALL ORDERS (ADMIN)
-app.get("/orders", async (req, res) => {
-  const result = await ordersCollection.find().toArray();
-  res.send(result);
-});
-
-// GET USER ORDERS
-app.get("/my-orders", async (req, res) => {
-  const email = req.query.email;
-
-  const result = await ordersCollection
-    .find({ userEmail: email })
-    .sort({ createdAt: -1 })
-    .toArray();
-
-  res.send(result);
-});
-
-// ----------------------
-// CONNECT DB + START APP (IMPORTANT FOR VERCEL)
-// ----------------------
-async function run() {
-  try {
-    await client.connect();
-
-    const db = client.db("assignment11");
-
-    usersCollection = db.collection("users");
-    productsCollection = db.collection("products");
-    ordersCollection = db.collection("orders");
-
-    console.log("MongoDB connected");
-  } catch (err) {
-    console.error("DB Error:", err.message);
-  }
-}
-
-run();
-
-// ----------------------
-// EXPORT FOR VERCEL (VERY IMPORTANT)
-// ----------------------
+// ======================================================
+// EXPORT FOR VERCEL
+// ======================================================
 module.exports = app;
