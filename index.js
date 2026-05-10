@@ -238,9 +238,4 @@ async function run() {
 
 run().catch(console.dir);
 
-// ----------------------
-// START SERVER
-// ----------------------
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
+module.exports = app;
