@@ -238,4 +238,8 @@ async function run() {
 
 run().catch(console.dir);
 
+
+const serverless = require("serverless-http");
+
 module.exports = app;
+module.exports.handler = serverless(app);
