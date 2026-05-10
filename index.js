@@ -7,9 +7,6 @@ require("dotenv").config();
 const app = express();
 const port = process.env.PORT || 5000;
 
-// ----------------------
-// Middleware
-// ----------------------
 app.use(cors({
   origin: "*",
   credentials: true,
@@ -18,9 +15,7 @@ app.use(cors({
 app.use(express.json());
 app.use(cookieParser());
 
-// ----------------------
-// MongoDB Setup
-// ----------------------
+//db connection
 const uri = `mongodb+srv://${process.env.DB_USER}:${encodeURIComponent(
   process.env.DB_PASS
 )}@cluster0.m3b0wdj.mongodb.net/assignment11?retryWrites=true&w=majority`;
@@ -38,17 +33,11 @@ async function run() {
     const productsCollection = db.collection("products");
     const ordersCollection = db.collection("orders");
 
-    // ======================================================
-    // ROOT
-    // ======================================================
-
+    
     app.get("/", (req, res) => {
       res.send(" Garments Tracker Server Running");
     });
 
-    // ======================================================
-    // USERS
-    // ======================================================
 
     app.post("/users", async (req, res) => {
       try {
@@ -239,7 +228,7 @@ async function run() {
 run().catch(console.dir);
 
 
-const serverless = require("serverless-http");
+//const serverless = require("serverless-http");
 
 module.exports = app;
-module.exports.handler = serverless(app);
+//module.exports.handler = serverless(app);
