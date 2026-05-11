@@ -8,7 +8,7 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 app.use(cors({
-  origin: "https://garments-tracker-client.vercel.app",
+  origin: "*",
   credentials: true,
 }));
 
@@ -227,8 +227,6 @@ async function run() {
 
 run().catch(console.dir);
 
-
-//const serverless = require("serverless-http");
-
-module.exports = app;
-//module.exports.handler = serverless(app);
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`);
+});
